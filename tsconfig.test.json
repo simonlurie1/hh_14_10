@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "ignoreDeprecations": "6.0",
+    "target": "es2022",
+    "outDir": ".test-build",
+    "rootDir": ".",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "customConditions": null
+  },
+  "include": ["__tests__/**/*.ts", "src/**/*.ts"]
+}

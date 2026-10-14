@@ -22,7 +22,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pretest": "node -e \"require('fs').rmSync('.test-build',{recursive:true,force:true})\"",
+    "test": "tsc -p tsconfig.test.json && node --test \".test-build/__tests__/*.test.js\""
   },
   "private": true
 }
