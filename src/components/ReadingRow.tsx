@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import React, { memo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Reading } from '../types';
-import { CATEGORY_COLORS, getBpCategory } from '../utils/bp';
+import { CATEGORY_COLORS, CATEGORY_LABELS, getBpCategory } from '../utils/bp';
 import { formatTime } from '../utils/dates';
 
 interface Props {
@@ -10,40 +10,51 @@ interface Props {
   onPress: (id: string) => void;
 }
 
-export function ReadingRow({ reading, isSelected, onPress }: Props) {
+/** Memoized: selecting one row re-renders only the rows whose props changed. */
+export const ReadingRow = memo(function ReadingRow({ reading, isSelected, onPress }: Props) {
   const category = getBpCategory(reading);
+  const label = CATEGORY_LABELS[category];
+  const source = reading.source === 'monitor' ? 'Monitor' : 'Manual';
+  const time = formatTime(reading.takenAt);
 
   return (
     <TouchableOpacity
       onPress={() => onPress(reading.id)}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        backgroundColor: isSelected ? '#eef3ff' : '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-      }}
+      style={[styles.row, isSelected && styles.selected]}
+      accessibilityRole="button"
+      accessibilityState={{ selected: isSelected }}
+      accessibilityLabel={`${reading.systolic} over ${reading.diastolic}, ${label}. Pulse ${reading.pulse}. ${source}, ${time}`}
     >
-      <View
-        style={{
-          width: 12,
-          height: 12,
-          borderRadius: 6,
-          backgroundColor: CATEGORY_COLORS[category],
-          marginRight: 12,
-        }}
-      />
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 18, fontWeight: '600' }}>
+      <View style={[styles.dot, { backgroundColor: CATEGORY_COLORS[category] }]} />
+      <View style={styles.main}>
+        <Text style={styles.value}>
           {reading.systolic}/{reading.diastolic}
+          <Text style={[styles.category, { color: CATEGORY_COLORS[category] }]}>  {label}</Text>
         </Text>
-        <Text style={{ fontSize: 12, color: '#999' }}>
-          Pulse {reading.pulse} · {reading.source === 'monitor' ? 'Monitor' : 'Manual'}
+        <Text style={styles.meta}>
+          Pulse {reading.pulse} · {source}
         </Text>
       </View>
-      <Text style={{ fontSize: 14, color: '#666' }}>{formatTime(reading.takenAt)}</Text>
+      <Text style={styles.time}>{time}</Text>
     </TouchableOpacity>
   );
-}
+});
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  selected: { backgroundColor: '#eef3ff' },
+  dot: { width: 12, height: 12, borderRadius: 6, marginRight: 12 },
+  main: { flex: 1 },
+  value: { fontSize: 18, fontWeight: '600', color: '#222' },
+  category: { fontSize: 13, fontWeight: '700' },
+  meta: { fontSize: 12, color: '#595959' },
+  time: { fontSize: 14, color: '#555' },
+});

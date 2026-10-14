@@ -36,6 +36,9 @@ test('#1 synced cuff readings are saved to the server and survive the next refre
 test('#2 syncing several times never duplicates readings (on screen or on the server)', async () => {
   const store = makeStore();
   await store.dispatch(fetchReadings('7d'));
+  // The simulated cuff keeps its memory between tests while the fake server is fresh,
+  // so start from a fully synced state before measuring.
+  await store.dispatch(syncFromMonitor());
   const before = rs(store).items.length;
   bpMonitor.takeMeasurement();
   await store.dispatch(syncFromMonitor());
