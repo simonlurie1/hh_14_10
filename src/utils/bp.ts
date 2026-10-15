@@ -36,6 +36,16 @@ export interface ReadingInput {
   pulse: number;
 }
 
+/**
+ * Parses what the user typed in a form field: only 1–3 plain digits (surrounding spaces allowed).
+ * Anything else ("1e2", "0x78", "+120", "12.0", "120/80") -> NaN, so validation rejects it.
+ * (Number("1e2") is 100 and Number("0x78") is 120, which would silently save a different value.)
+ */
+export function parseWholeNumber(text: string): number {
+  const trimmed = text.trim();
+  return /^\d{1,3}$/.test(trimmed) ? parseInt(trimmed, 10) : NaN;
+}
+
 /** Plausible ranges for a home BP cuff. Returns a user-facing error, or null if the input is valid. */
 export function validateReadingInput({ systolic, diastolic, pulse }: ReadingInput): string | null {
   const whole = (n: number) => Number.isInteger(n);

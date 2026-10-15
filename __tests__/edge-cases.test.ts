@@ -10,7 +10,7 @@ import { selectReadingsByDay } from '../src/store/selectors';
 import { readingsApi } from '../src/api/readingsApi';
 import { bpMonitor } from '../src/device/bpMonitor';
 import { localDayKey } from '../src/utils/dates';
-import { validateReadingInput } from '../src/utils/bp';
+import { parseWholeNumber, validateReadingInput } from '../src/utils/bp';
 import { RangeKey } from '../src/types';
 
 let fs: FakeServer;
@@ -288,6 +288,14 @@ test('E20 validation boundaries', () => {
   assert.ok(!ok(120.5, 80, 70), 'decimal');
   assert.ok(!ok(Infinity, 80, 70));
   assert.ok(!ok(120, 80, 221));
+});
+
+test('E25 the form reads only plain whole numbers (web keyboards allow any text)', () => {
+  const accepted: [string, number][] = [['120', 120], [' 120 ', 120], ['60', 60], ['7', 7]];
+  for (const [text, value] of accepted) assert.equal(parseWholeNumber(text), value, JSON.stringify(text));
+  for (const text of ['', '   ', '1e2', '0x78', '+120', '-120', '12.0', '120.5', '12 0', '120/80', '1200', 'abc', '١٢٠']) {
+    assert.ok(Number.isNaN(parseWholeNumber(text)), `${JSON.stringify(text)} should be rejected`);
+  }
 });
 
 test('E21 save fails (server down), then a retry succeeds and adds exactly one reading', async () => {

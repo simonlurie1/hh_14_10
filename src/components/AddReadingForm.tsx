@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator 
 import { useAppDispatch, useAppSelector } from '../store';
 import { addReading } from '../store/readingsSlice';
 import { selectSaving } from '../store/selectors';
-import { validateReadingInput } from '../utils/bp';
+import { parseWholeNumber, validateReadingInput } from '../utils/bp';
 
 export function AddReadingForm() {
   const dispatch = useAppDispatch();
@@ -16,9 +16,9 @@ export function AddReadingForm() {
   const onSave = async () => {
     if (saving) return;
     const input = {
-      systolic: Number(systolic.trim() || NaN),
-      diastolic: Number(diastolic.trim() || NaN),
-      pulse: Number(pulse.trim() || NaN),
+      systolic: parseWholeNumber(systolic),
+      diastolic: parseWholeNumber(diastolic),
+      pulse: parseWholeNumber(pulse),
     };
     const invalid = validateReadingInput(input);
     if (invalid) {
