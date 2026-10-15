@@ -242,11 +242,13 @@ test('E16 sync while the server is down before the first load: clear error, then
   assert.equal(fs.db.filter((x) => x.deviceReadingId === 'cuff-offline').length, 1);
 });
 
-test('E17 the cuff reports an impossible value (0/0): it is not uploaded as a real reading', { todo: 'KNOWN BREAK: cuff readings are not validated' }, async () => {
+test('E17 the cuff reports an impossible value (0/0): it is not uploaded as a real reading', async () => {
   const store = makeStore();
   await store.dispatch(fetchReadings('7d'));
-  await syncWith(store, [cuffReading('cuff-err', 1, { systolic: 0, diastolic: 0, pulse: 0 })]);
-  assert.equal(fs.posts.length, 0, 'a 0/0 cuff error was saved as a reading');
+  await syncWith(store, [cuffReading('cuff-err', 1, { systolic: 0, diastolic: 0, pulse: 0 }), cuffReading('cuff-ok', 2)]);
+  assert.equal(fs.posts.filter((p) => p.deviceReadingId === 'cuff-err').length, 0, 'a 0/0 cuff error was saved as a reading');
+  assert.equal(fs.posts.filter((p) => p.deviceReadingId === 'cuff-ok').length, 1, 'the valid reading in the same sync must still upload');
+  assert.match(String(rs(store).syncError), /failed measurement/, 'the user is not told');
 });
 
 test('E18 the cuff returns junk instead of a list: sync fails cleanly, no crash', async () => {

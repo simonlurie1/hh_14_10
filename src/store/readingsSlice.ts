@@ -1,6 +1,6 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { readingsApi } from '../api/readingsApi';
-import { bpMonitor } from '../device/bpMonitor';
+import { bpMonitor, DeviceReading } from '../device/bpMonitor';
 import { Reading, RangeKey, RANGE_DAYS } from '../types';
 import { ReadingInput, validateReadingInput } from '../utils/bp';
 
@@ -73,6 +73,8 @@ export interface SyncResult {
   uploadError: string | null;
   /** Readings older than the server can be asked about (> 90 days): not uploaded. */
   tooOldCount: number;
+  /** Implausible cuff values (e.g. 0/0 from a failed measurement): not uploaded. */
+  invalidCount: number;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -102,15 +104,23 @@ export const syncFromMonitor = createAsyncThunk<SyncResult, void, { state: Thunk
     // 1. New to this screen? (also de-duplicates within one batch)
     const state = getState().readings;
     const seen = new Set(state.items.map((r) => r.deviceReadingId).filter(Boolean) as string[]);
-    const candidates = deviceReadings.filter((r) => {
+    const fresh = deviceReadings.filter((r) => {
       if (!r?.deviceReadingId || seen.has(r.deviceReadingId)) return false;
       seen.add(r.deviceReadingId);
       return true;
     });
-    const empty: SyncResult = { uploaded: [], alreadyOnServer: [], failedCount: 0, uploadError: null, tooOldCount: 0 };
+
+    // 2. Plausible? A failed cuff measurement (e.g. 0/0) is not saved as a real reading.
+    const isPlausible = (r: DeviceReading) =>
+      !isNaN(Date.parse(r.takenAt)) &&
+      validateReadingInput({ systolic: r.systolic, diastolic: r.diastolic, pulse: r.pulse }) === null;
+    const candidates = fresh.filter(isPlausible);
+    const invalidCount = fresh.length - candidates.length;
+
+    const empty: SyncResult = { uploaded: [], alreadyOnServer: [], failedCount: 0, uploadError: null, tooOldCount: 0, invalidCount };
     if (candidates.length === 0) return empty;
 
-    // 2. New to the server? Ask it, looking back to the oldest candidate.
+    // 3. New to the server? Ask it, looking back to the oldest candidate.
     const now = Date.now();
     const checkable = candidates.filter((r) => rangeCovering(now - Date.parse(r.takenAt)) !== null);
     const tooOldCount = candidates.length - checkable.length;
@@ -121,7 +131,7 @@ export const syncFromMonitor = createAsyncThunk<SyncResult, void, { state: Thunk
     const alreadyOnServer = checkable.map((r) => serverByDeviceId.get(r.deviceReadingId!)).filter(Boolean) as Reading[];
     const toUpload = checkable.filter((r) => !serverByDeviceId.has(r.deviceReadingId!));
 
-    // 3. Upload the rest.
+    // 4. Upload the rest.
     const uploaded: Reading[] = [];
     let failedCount = 0;
     let uploadError: string | null = null;
@@ -133,7 +143,7 @@ export const syncFromMonitor = createAsyncThunk<SyncResult, void, { state: Thunk
         uploadError = errorMessage(e, 'Upload failed');
       }
     }
-    return { uploaded, alreadyOnServer, failedCount, uploadError, tooOldCount };
+    return { uploaded, alreadyOnServer, failedCount, uploadError, tooOldCount, invalidCount };
   },
   { condition: (_, { getState }) => !getState().readings.syncing }
 );
@@ -234,9 +244,17 @@ const readingsSlice = createSlice({
         state.lastSyncedAt = new Date().toISOString();
         action.payload.uploaded.forEach((r) => upsertLocal(state, r));
         action.payload.alreadyOnServer.forEach((r) => upsertLocal(state, r));
-        state.syncError = action.payload.failedCount
-          ? `${action.payload.failedCount} reading(s) could not be uploaded (${action.payload.uploadError}). They are still on the cuff and will upload on the next sync.`
-          : null;
+        const { failedCount, uploadError, invalidCount } = action.payload;
+        const messages: string[] = [];
+        if (failedCount) {
+          messages.push(
+            `${failedCount} reading(s) could not be uploaded (${uploadError}). They are still on the cuff and will upload on the next sync.`
+          );
+        }
+        if (invalidCount) {
+          messages.push(`${invalidCount} reading(s) from the cuff looked like a failed measurement and were skipped. Please measure again.`);
+        }
+        state.syncError = messages.length ? messages.join(' ') : null;
       })
       .addCase(syncFromMonitor.rejected, (state, action) => {
         state.syncing = false;
