@@ -1,7 +1,7 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { readingsApi } from '../api/readingsApi';
 import { bpMonitor } from '../device/bpMonitor';
-import { Reading, RangeKey } from '../types';
+import { Reading, RangeKey, RANGE_DAYS } from '../types';
 import { ReadingInput, validateReadingInput } from '../utils/bp';
 
 type Status = 'idle' | 'loading' | 'succeeded' | 'failed';
@@ -67,35 +67,61 @@ export const fetchReadings = createAsyncThunk('readings/fetch', async (range: Ra
 
 export interface SyncResult {
   uploaded: Reading[];
+  /** Cuff readings the server already had (e.g. an upload that timed out but was saved). */
+  alreadyOnServer: Reading[];
   failedCount: number;
   uploadError: string | null;
+  /** Readings older than the server can be asked about (> 90 days): not uploaded. */
+  tooOldCount: number;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RANGES_BY_SIZE: RangeKey[] = ['7d', '30d', '90d'];
+
+/** Smallest range that still contains a reading taken `ageMs` ago (null if older than 90 days). */
+function rangeCovering(ageMs: number): RangeKey | null {
+  return RANGES_BY_SIZE.find((r) => ageMs <= RANGE_DAYS[r] * DAY_MS - 60_000) ?? null;
 }
 
 /**
  * Sync = read the cuff, then UPLOAD readings the server doesn't have yet.
  * The cuff re-sends its whole memory every time, so readings are de-duplicated by
- * their stable `deviceReadingId`. Readings that fail to upload are simply retried on the
- * next sync (they are still in the cuff's memory and still unknown to the server).
+ * their stable `deviceReadingId`.
+ *
+ * The screen only holds the selected range, and an upload that timed out may still have
+ * been saved, so before uploading we ask the SERVER which of the new readings it already
+ * has, looking back as far as the oldest one. Readings that fail to upload are retried on
+ * the next sync (they are still in the cuff's memory and still unknown to the server).
  */
 export const syncFromMonitor = createAsyncThunk<SyncResult, void, { state: ThunkState }>(
   'readings/syncFromMonitor',
   async (_, { getState }) => {
     const deviceReadings = await bpMonitor.sync();
+    if (!Array.isArray(deviceReadings)) throw new Error('The cuff sent an unexpected response. Please sync again.');
 
+    // 1. New to this screen? (also de-duplicates within one batch)
     const state = getState().readings;
-    const known = new Set(state.items.map((r) => r.deviceReadingId).filter(Boolean) as string[]);
-    if (state.loadedRange === null) {
-      // Nothing loaded yet: ask the server which recent readings it already has.
-      const recent = await readingsApi.fetchReadings('7d');
-      recent.forEach((r) => r.deviceReadingId && known.add(r.deviceReadingId));
-    }
-
-    const toUpload = deviceReadings.filter((r) => {
-      if (!r.deviceReadingId || known.has(r.deviceReadingId)) return false;
-      known.add(r.deviceReadingId); // also de-duplicates within one batch
+    const seen = new Set(state.items.map((r) => r.deviceReadingId).filter(Boolean) as string[]);
+    const candidates = deviceReadings.filter((r) => {
+      if (!r?.deviceReadingId || seen.has(r.deviceReadingId)) return false;
+      seen.add(r.deviceReadingId);
       return true;
     });
+    const empty: SyncResult = { uploaded: [], alreadyOnServer: [], failedCount: 0, uploadError: null, tooOldCount: 0 };
+    if (candidates.length === 0) return empty;
 
+    // 2. New to the server? Ask it, looking back to the oldest candidate.
+    const now = Date.now();
+    const checkable = candidates.filter((r) => rangeCovering(now - Date.parse(r.takenAt)) !== null);
+    const tooOldCount = candidates.length - checkable.length;
+    if (checkable.length === 0) return { ...empty, tooOldCount };
+    const oldestAge = Math.max(...checkable.map((r) => now - Date.parse(r.takenAt)));
+    const onServer = await readingsApi.fetchReadings(rangeCovering(oldestAge)!);
+    const serverByDeviceId = new Map(onServer.filter((r) => r.deviceReadingId).map((r) => [r.deviceReadingId!, r]));
+    const alreadyOnServer = checkable.map((r) => serverByDeviceId.get(r.deviceReadingId!)).filter(Boolean) as Reading[];
+    const toUpload = checkable.filter((r) => !serverByDeviceId.has(r.deviceReadingId!));
+
+    // 3. Upload the rest.
     const uploaded: Reading[] = [];
     let failedCount = 0;
     let uploadError: string | null = null;
@@ -107,7 +133,7 @@ export const syncFromMonitor = createAsyncThunk<SyncResult, void, { state: Thunk
         uploadError = errorMessage(e, 'Upload failed');
       }
     }
-    return { uploaded, failedCount, uploadError };
+    return { uploaded, alreadyOnServer, failedCount, uploadError, tooOldCount };
   },
   { condition: (_, { getState }) => !getState().readings.syncing }
 );
@@ -207,6 +233,7 @@ const readingsSlice = createSlice({
         state.syncing = false;
         state.lastSyncedAt = new Date().toISOString();
         action.payload.uploaded.forEach((r) => upsertLocal(state, r));
+        action.payload.alreadyOnServer.forEach((r) => upsertLocal(state, r));
         state.syncError = action.payload.failedCount
           ? `${action.payload.failedCount} reading(s) could not be uploaded (${action.payload.uploadError}). They are still on the cuff and will upload on the next sync.`
           : null;

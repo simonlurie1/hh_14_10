@@ -210,7 +210,7 @@ test('E13 one of three uploads fails: the other two are saved, the failed one up
   assert.deepEqual(onServer.sort(), ['cuff-p1', 'cuff-p2', 'cuff-p3']);
 });
 
-test('E14 the cuff still holds a reading OLDER than the loaded 7 days: it is not uploaded again', { todo: 'KNOWN BREAK: old cuff readings outside the loaded range are re-uploaded' }, async () => {
+test('E14 the cuff still holds a reading OLDER than the loaded 7 days: it is not uploaded again', async () => {
   const store = makeStore();
   await store.dispatch(fetchReadings('7d'));
   const old = fs.db.find((x) => Date.now() - Date.parse(x.takenAt) > 9 * DAY_MS && x.deviceReadingId);
@@ -219,7 +219,7 @@ test('E14 the cuff still holds a reading OLDER than the loaded 7 days: it is not
   assert.equal(fs.posts.length, 0, `re-uploaded ${old.deviceReadingId} -> duplicate on the server`);
 });
 
-test('E15 upload times out but the server DID save it: the next sync must not create a duplicate', { todo: 'KNOWN BREAK: sync after a timed-out upload duplicates it' }, async () => {
+test('E15 upload times out but the server DID save it: the next sync must not create a duplicate', async () => {
   const store = makeStore();
   await store.dispatch(fetchReadings('7d'));
   (readingsApi as any).timeoutMs = 20;
