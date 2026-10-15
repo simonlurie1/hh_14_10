@@ -109,6 +109,20 @@ test('E4 a late FAILURE of an old request does not override a newer success', as
   assert.equal(rs(store).error, null);
 });
 
+test('E26 the latest response arrives for a tab the user already left: ignored, and not stuck loading', async () => {
+  const store = makeStore();
+  const load = store.dispatch(fetchReadings('7d'));
+  store.dispatch(setRange('30d')); // tab changed, its own request not started yet
+  await load;
+  assert.notEqual(rs(store).status, 'loading', 'stuck on the loader');
+  assert.equal(rs(store).refreshing, false);
+  assert.equal(rs(store).loadedRange, null, '7d data must not be shown as 30d');
+  store.dispatch(setRange('30d'));
+  await store.dispatch(fetchReadings('30d'));
+  assert.equal(rs(store).loadedRange, '30d');
+  assert.equal(rs(store).status, 'succeeded');
+});
+
 test('E5 an empty account (server returns []) is a success with an empty list', async () => {
   fs.db = [];
   const store = makeStore();

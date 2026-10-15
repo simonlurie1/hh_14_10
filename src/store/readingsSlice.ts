@@ -201,8 +201,16 @@ const readingsSlice = createSlice({
         }
       })
       .addCase(fetchReadings.fulfilled, (state, action) => {
-        // Ignore stale responses (an older request, or one for a range the user left).
-        if (action.meta.requestId !== state.currentRequestId || action.meta.arg !== state.range) return;
+        // Ignore stale responses: an older request…
+        if (action.meta.requestId !== state.currentRequestId) return;
+        // …or the latest one, but for a range the user has already left: drop the data,
+        // and don't leave the screen in a loading state.
+        if (action.meta.arg !== state.range) {
+          state.currentRequestId = null;
+          state.refreshing = false;
+          state.status = state.loadedRange === state.range ? 'succeeded' : 'idle';
+          return;
+        }
 
         const fromServer = action.payload;
         const serverIds = new Set(fromServer.map((r) => r.id));
