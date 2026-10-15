@@ -10,6 +10,21 @@ function log(message: string) {
   if (dev !== false) console.log(`[api] ${message}`);
 }
 
+/**
+ * The server may hold the same measurement twice (same id, or two ids for one cuff reading,
+ * e.g. synced from two phones). Show it once: duplicate list keys break rendering and skew averages.
+ */
+function uniqueReadings(readings: Reading[]): Reading[] {
+  const ids = new Set<string>();
+  const deviceIds = new Set<string>();
+  return readings.filter((r) => {
+    if (ids.has(r.id) || (r.deviceReadingId && deviceIds.has(r.deviceReadingId))) return false;
+    ids.add(r.id);
+    if (r.deviceReadingId) deviceIds.add(r.deviceReadingId);
+    return true;
+  });
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms);
@@ -41,9 +56,15 @@ export const readingsApi = {
     if (!Array.isArray(data)) {
       throw new Error('Unexpected response from the server.');
     }
-    const readings = data.filter(isValidReading);
-    const skipped = data.length - readings.length;
-    log(`GET /readings?range=${range} -> ${readings.length} readings${skipped ? `, ${skipped} malformed skipped` : ''} (${Date.now() - started}ms)`);
+    const valid = data.filter(isValidReading);
+    const readings = uniqueReadings(valid);
+    const malformed = data.length - valid.length;
+    const duplicates = valid.length - readings.length;
+    log(
+      `GET /readings?range=${range} -> ${readings.length} readings` +
+        `${malformed ? `, ${malformed} malformed skipped` : ''}${duplicates ? `, ${duplicates} duplicates skipped` : ''}` +
+        ` (${Date.now() - started}ms)`
+    );
     return readings;
   },
 

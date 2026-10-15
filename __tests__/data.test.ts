@@ -122,8 +122,10 @@ test('#5 a reading just after midnight is grouped under the LOCAL day', async ()
 
 test('#6 readings are sorted newest first, and days are in order (also across months)', async () => {
   const store = makeStore();
+  store.dispatch(setRange('90d'));
   await store.dispatch(fetchReadings('90d'));
   const groups = selectReadingsByDay(store.getState() as any);
+  assert.ok(groups.length > 60, `expected ~90 days of data, got ${groups.length} days`);
   const days = groups.map((g) => g.day);
   assert.deepEqual(days, [...days].sort().reverse(), 'day headers out of order');
   const flat = groups.flatMap((g) => g.readings.map((r) => Date.parse(r.takenAt)));

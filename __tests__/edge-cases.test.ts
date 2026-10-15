@@ -120,11 +120,12 @@ test('E5 an empty account (server returns []) is a success with an empty list', 
 test('E6 server sends the SAME reading twice (same id): shown once', async () => {
   fs.db.push({ ...fs.db[0] });
   const store = makeStore();
-  await store.dispatch(fetchReadings('90d'));
+  await store.dispatch(fetchReadings('7d'));
+  assert.ok(rs(store).items.some((r: any) => r.id === fs.db[0].id), 'test setup: the duplicated reading must be in the list');
   assert.deepEqual(dupes(rs(store).items.map((r: any) => r.id)), [], 'duplicate React keys in the list');
 });
 
-test('E7 server already holds a duplicate device reading (2 ids, same deviceReadingId): shown once', { todo: 'KNOWN BREAK: server-side duplicates are shown twice' }, async () => {
+test('E7 server already holds a duplicate device reading (2 ids, same deviceReadingId): shown once', async () => {
   const r = fs.db.find((x) => Date.now() - Date.parse(x.takenAt) < 2 * DAY_MS);
   fs.db.push({ ...r, id: 'srv-dup-of-' + r.id });
   const store = makeStore();
